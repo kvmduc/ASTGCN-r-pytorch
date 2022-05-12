@@ -5,13 +5,14 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import os
+import os.path as osp
 from time import time
 import shutil
 import argparse
 import configparser
 from model.ASTGCN_r import make_model
-from lib.utils import load_graphdata_channel1, get_adjacency_matrix, compute_val_loss_mstgcn, predict_and_save_results_mstgcn
-from tensorboardX import SummaryWriter
+from lib.utils import load_graphdata_channel1, load_custom_graphdata, compute_val_loss_mstgcn, predict_and_save_results_mstgcn
+# from tensorboardX import SummaryWriter
 from lib.metrics import masked_mape_np,  masked_mae,masked_mse,masked_rmse
 
 
@@ -25,6 +26,8 @@ config.read(args.config)
 data_config = config['Data']
 training_config = config['Training']
 
+######################### PARSE DATA ARGUMENT #########################
+
 adj_filename = data_config['adj_filename']
 graph_signal_matrix_filename = data_config['graph_signal_matrix_filename']
 if config.has_option('Data', 'id_filename'):
@@ -32,11 +35,16 @@ if config.has_option('Data', 'id_filename'):
 else:
     id_filename = None
 
-num_of_vertices = int(data_config['num_of_vertices'])
 points_per_hour = int(data_config['points_per_hour'])
 num_for_predict = int(data_config['num_for_predict'])
 len_input = int(data_config['len_input'])
 dataset_name = data_config['dataset_name']
+begin_year = int(data_config['begin_year'])
+end_year = int(data_config['end_year'])
+
+
+######################### PARSE MODEL ARGUMENT #########################
+
 
 model_name = training_config['model_name']
 
@@ -69,12 +77,22 @@ params_path = os.path.join('experiments', dataset_name, folder_dir)
 print('params_path:', params_path)
 
 
-train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor, _mean, _std = load_graphdata_channel1(
-    graph_signal_matrix_filename, num_of_hours,
-    num_of_days, num_of_weeks, DEVICE, batch_size)
+########################################## LOAD DATA ##########################################
+# train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor, _mean, _std = load_graphdata_channel1(
+#     graph_signal_matrix_filename, num_of_hours,
+#     num_of_days, num_of_weeks, DEVICE, batch_size)
 
-adj_mx, distance_mx = get_adjacency_matrix(adj_filename, num_of_vertices, id_filename)
+train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor = load_custom_graphdata(
+    graph_signal_matrix_filename, 2011, DEVICE, batch_size)
 
+
+########################################## LOAD GRAPH ##########################################
+# adj_mx, distance_mx = get_adjacency_matrix(adj_filename, num_of_vertices, id_filename)
+adj_mx = np.load(osp.join(adj_filename, str(2011)+"_adj.npz"))["x"]
+num_of_vertices = int(adj_mx.shape[0])
+
+
+########################################## MODEL DEFINITION ##########################################
 net = make_model(DEVICE, nb_block, in_channels, K, nb_chev_filter, nb_time_filter, time_strides, adj_mx,
                  num_for_predict, len_input, num_of_vertices)
 
@@ -199,10 +217,10 @@ def train_main():
     print('best epoch:', best_epoch)
 
     # apply the best model on the test set
-    predict_main(best_epoch, test_loader, test_target_tensor,metric_method ,_mean, _std, 'test')
+    predict_main(best_epoch, test_loader, test_target_tensor,metric_method , 'test')
 
 
-def predict_main(global_step, data_loader, data_target_tensor,metric_method, _mean, _std, type):
+def predict_main(global_step, data_loader, data_target_tensor,metric_method , type):
     '''
 
     :param global_step: int
@@ -219,7 +237,7 @@ def predict_main(global_step, data_loader, data_target_tensor,metric_method, _me
 
     net.load_state_dict(torch.load(params_filename))
 
-    predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method,_mean, _std, params_path, type)
+    predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type)
 
 
 if __name__ == "__main__":
