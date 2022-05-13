@@ -1,4 +1,5 @@
 import os
+import os.path as osp
 import numpy as np
 import torch
 import torch.utils.data
@@ -7,6 +8,8 @@ from sklearn.metrics import mean_squared_error
 from .metrics import masked_mape_np
 from scipy.sparse.linalg import eigs
 from .metrics import masked_mape_np,  masked_mae,masked_mse,masked_rmse,masked_mae_test,masked_rmse_test
+import logging
+import sys
 
 
 def re_normalization(x, mean, std):
@@ -394,7 +397,7 @@ def compute_val_loss_mstgcn(net, val_loader, criterion,  masked_flag,missing_val
 #                 sw.add_scalar('MAPE_%s_points' % (i), mape, epoch)
 
 
-def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type):
+def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type, year, result):
     '''
 
     :param net: nn.Module
@@ -440,24 +443,27 @@ def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global
         print('input:', input.shape)
         print('prediction:', prediction.shape)
         print('data_target_tensor:', data_target_tensor.shape)
-        output_filename = os.path.join(params_path, 'output_epoch_%s_%s' % (global_step, type))
+        output_filename = os.path.join(params_path, str(year), 'output_epoch_%s_%s' % (global_step, type))
         np.savez(output_filename, input=input, prediction=prediction, data_target_tensor=data_target_tensor)
 
         # 计算误差
         excel_list = []
         prediction_length = prediction.shape[2]
 
-        for i in range(prediction_length):
+        for i in [3 , 6, 12]:
             assert data_target_tensor.shape[0] == prediction.shape[0]
             print('current epoch: %s, predict %s points' % (global_step, i))
             if metric_method == 'mask':
-                mae = masked_mae_test(data_target_tensor[:, :, i], prediction[:, :, i],0.0)
-                rmse = masked_rmse_test(data_target_tensor[:, :, i], prediction[:, :, i],0.0)
-                mape = masked_mape_np(data_target_tensor[:, :, i], prediction[:, :, i], 0)
+                mae = masked_mae_test(data_target_tensor[:, :, :i], prediction[:, :, :i],0.0)
+                rmse = masked_rmse_test(data_target_tensor[:, :, :i], prediction[:, :, :i],0.0)
+                mape = masked_mape_np(data_target_tensor[:, :, :i], prediction[:, :, :i], 0)
             else :
-                mae = mean_absolute_error(data_target_tensor[:, :, i], prediction[:, :, i])
-                rmse = mean_squared_error(data_target_tensor[:, :, i], prediction[:, :, i]) ** 0.5
-                mape = masked_mape_np(data_target_tensor[:, :, i], prediction[:, :, i], 0)
+                mae = mean_absolute_error(data_target_tensor[:, :, :i], prediction[:, :, :i])
+                rmse = mean_squared_error(data_target_tensor[:, :, :i], prediction[:, :, :i]) ** 0.5
+                mape = masked_mape_np(data_target_tensor[:, :, :i], prediction[:, :, :i], 0)
+            result[i]['mae'][year] = mae
+            result[i]['rmse'][year] = rmse
+            result[i]['mape'][year] = mape
             print('MAE: %.2f' % (mae))
             print('RMSE: %.2f' % (rmse))
             print('MAPE: %.2f' % (mape))
@@ -479,3 +485,42 @@ def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global
         print(excel_list)
 
 
+
+def get_logger(log_dir, name, log_filename='info.log', level=logging.INFO):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    # Add file handler and stdout handler
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler = logging.FileHandler(os.path.join(log_dir, log_filename))
+    file_handler.setFormatter(formatter)
+    # Add console handler.
+    console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    # Add google cloud log handler
+    logger.info('Log directory: %s', log_dir)
+    return logger
+
+def init_log():
+    log_dir = './log/'
+    log_filename = 'info'
+    logger = logging.getLogger(__name__)
+
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    logger.setLevel(logging.INFO)
+    fh = logging.FileHandler(osp.join(log_dir, log_filename+".log"))
+    fh.setLevel(logging.INFO)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(message)s")
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    logger.info("logger name:%s", osp.join(log_dir, log_filename+".log"))
+    # vars(args)["logger"] = logger
+    return logger

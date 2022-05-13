@@ -11,9 +11,13 @@ import shutil
 import argparse
 import configparser
 from model.ASTGCN_r import make_model
-from lib.utils import load_graphdata_channel1, load_custom_graphdata, compute_val_loss_mstgcn, predict_and_save_results_mstgcn
+from lib.utils import load_graphdata_channel1, load_custom_graphdata, compute_val_loss_mstgcn, predict_and_save_results_mstgcn, get_logger, init_log
 # from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from lib.metrics import masked_mape_np,  masked_mae,masked_mse,masked_rmse
+
+
+result = {3:{"mae":{}, "mape":{}, "rmse":{}}, 6:{"mae":{}, "mape":{}, "rmse":{}}, 12:{"mae":{}, "mape":{}, "rmse":{}}}
 
 
 parser = argparse.ArgumentParser()
@@ -77,39 +81,70 @@ params_path = os.path.join('experiments', dataset_name, folder_dir)
 print('params_path:', params_path)
 
 
+######################### GET LOGGER #########################
+# run_id = 'astgcn_lr_%g_bs_%d_%s/' % (
+#                 learning_rate, batch_size,
+#                 time.strftime('%m%d%H%M%S'))
+# log_dir = os.path.join('./log/', run_id)
+
+# if not os.path.exists(log_dir):
+#     os.makedirs(log_dir)
+# logger = get_logger('./log/', __name__, str(self.year) + 'info.log')
+logger = init_log()
+
+
 ########################################## LOAD DATA ##########################################
 # train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor, _mean, _std = load_graphdata_channel1(
 #     graph_signal_matrix_filename, num_of_hours,
 #     num_of_days, num_of_weeks, DEVICE, batch_size)
 
-train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor = load_custom_graphdata(
-    graph_signal_matrix_filename, 2011, DEVICE, batch_size)
+# train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor = load_custom_graphdata(
+#     graph_signal_matrix_filename, 2011, DEVICE, batch_size)
 
 
 ########################################## LOAD GRAPH ##########################################
 # adj_mx, distance_mx = get_adjacency_matrix(adj_filename, num_of_vertices, id_filename)
-adj_mx = np.load(osp.join(adj_filename, str(2011)+"_adj.npz"))["x"]
-num_of_vertices = int(adj_mx.shape[0])
+
+# adj_mx = np.load(osp.join(adj_filename, str(2011)+"_adj.npz"))["x"]
+# num_of_vertices = int(adj_mx.shape[0])
 
 
 ########################################## MODEL DEFINITION ##########################################
-net = make_model(DEVICE, nb_block, in_channels, K, nb_chev_filter, nb_time_filter, time_strides, adj_mx,
-                 num_for_predict, len_input, num_of_vertices)
+# net = make_model(DEVICE, nb_block, in_channels, K, nb_chev_filter, nb_time_filter, time_strides, adj_mx,
+#                  num_for_predict, len_input, num_of_vertices)
 
 
-def train_main():
+
+def train_main(year):
+    global result
+
+    logger.info('START TRAINING YEAR {} !'.format(year))
+
+    # Dataset Definition
+    adj_mx = np.load(osp.join(adj_filename, str(year)+"_adj.npz"))["x"]
+    num_of_vertices = int(adj_mx.shape[0])
+    train_loader, train_target_tensor, val_loader, val_target_tensor, test_loader, test_target_tensor = load_custom_graphdata(
+        graph_signal_matrix_filename, str(year), DEVICE, batch_size)
+
+    # Model Definition
+
     if (start_epoch == 0) and (not os.path.exists(params_path)):
         os.makedirs(params_path)
-        print('create params directory %s' % (params_path))
+        logger.info('create params directory %s' % (params_path))
     elif (start_epoch == 0) and (os.path.exists(params_path)):
         shutil.rmtree(params_path)
         os.makedirs(params_path)
-        print('delete the old one and create params directory %s' % (params_path))
+        logger.info('delete the old one and create params directory %s' % (params_path))
     elif (start_epoch > 0) and (os.path.exists(params_path)):
-        print('train from params directory %s' % (params_path))
+        logger.info('train from params directory %s' % (params_path))
     else:
         raise SystemExit('Wrong type of model!')
 
+    net = make_model(DEVICE, nb_block, in_channels, K, nb_chev_filter, nb_time_filter, time_strides, adj_mx,
+                num_for_predict, len_input, num_of_vertices)
+
+    # Logging
+    log_every = 5
     print('param list:')
     print('CUDA\t', DEVICE)
     print('in_channels\t', in_channels)
@@ -137,15 +172,15 @@ def train_main():
         criterion = nn.MSELoss().to(DEVICE)
         masked_flag= 0
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-    sw = SummaryWriter(logdir=params_path, flush_secs=5)
-    print(net)
+    sw = SummaryWriter(params_path)
+    # print(net)
 
     print('Net\'s state_dict:')
     total_param = 0
     for param_tensor in net.state_dict():
         print(param_tensor, '\t', net.state_dict()[param_tensor].size())
         total_param += np.prod(net.state_dict()[param_tensor].size())
-    print('Net\'s total params:', total_param)
+    logger.info('Net\'s total params:', total_param)
 
     print('Optimizer\'s state_dict:')
     for var_name in optimizer.state_dict():
@@ -155,34 +190,43 @@ def train_main():
     best_epoch = 0
     best_val_loss = np.inf
 
-    start_time = time()
-
     if start_epoch > 0:
 
-        params_filename = os.path.join(params_path, 'epoch_%s.params' % start_epoch)
+        params_filename = os.path.join(params_path, str(year),'epoch_%s.params' % start_epoch)
 
         net.load_state_dict(torch.load(params_filename))
 
-        print('start epoch:', start_epoch)
+        logger.info('start epoch:', start_epoch)
 
-        print('load weight from: ', params_filename)
+        logger.info('load weight from: ', params_filename)
+
+    if year > begin_year :
+        
+        epo_list = []
+        params_path_prev_year = params_path + '/{}'.format(year = int(year) - 1)    # load the previous year model as the initial model
+        for filename in os.listdir(params_path_prev_year): 
+            epo_list.append(filename[6:]) 					# already has .params in it
+        epo_list= sorted(epo_list)
+        params_filename = '{}/epoch_{epo_num}'.format(params_path_prev_year, epo_num = epo_list[-1])
+        assert os.path.exists(params_filename), 'Weights at {} not found'.format(params_filename)
+
+        net.load_state_dict(torch.load(params_filename))
+        logger.info('load weight from: ', params_filename)
 
     # train model
+
+    use_time = []
+    total_time = 0
+    wait = 0
+    start_time = time()
+    patience = 50
+
     for epoch in range(start_epoch, epochs):
 
-        params_filename = os.path.join(params_path, 'epoch_%s.params' % epoch)
+        params_filename = os.path.join(params_path, str(year),'epoch_%s.params' % epoch)        # resume training if start_epoch != 0
 
-        if masked_flag:
-            val_loss = compute_val_loss_mstgcn(net, val_loader, criterion_masked, masked_flag,missing_value,sw, epoch)
-        else:
-            val_loss = compute_val_loss_mstgcn(net, val_loader, criterion, masked_flag, missing_value, sw, epoch)
-
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_epoch = epoch
-            torch.save(net.state_dict(), params_filename)
-            print('save parameters to file: %s' % params_filename)
+        val_loss = 0
+        training_loss = 0
 
         net.train()  # ensure dropout layers are in train mode
 
@@ -210,17 +254,56 @@ def train_main():
 
             sw.add_scalar('training_loss', training_loss, global_step)
 
-            if global_step % 1000 == 0:
+            # if global_step % 1000 == 0:
 
-                print('global step: %s, training loss: %.2f, time: %.2fs' % (global_step, training_loss, time() - start_time))
+            #     print('global step: %s, training loss: %.2f, time: %.2fs' % (global_step, training_loss, time() - start_time))
 
-    print('best epoch:', best_epoch)
+        end_time = time()
+        total_time += (end_time - start_time)
+        use_time.append((end_time - start_time))
+
+        ####################### EVALUATE IN TRAINING #######################
+
+        if masked_flag:
+            val_loss = compute_val_loss_mstgcn(net, val_loader, criterion_masked, masked_flag,missing_value,sw, epoch)
+        else:
+            val_loss = compute_val_loss_mstgcn(net, val_loader, criterion, masked_flag, missing_value, sw, epoch)
+
+        if val_loss < best_val_loss:
+            wait = 0
+            best_val_loss = val_loss
+            best_epoch = epoch
+            torch.save(net.state_dict(), params_filename)
+            print('save parameters to file: %s' % params_filename)
+        elif val_loss >= best_val_loss:
+            wait += 1
+            if wait == patience:
+                logger.warning('Early stopping at epoch: %d' % epoch)
+                break
+
+        if (epoch % log_every) == log_every - 1:
+            message = 'Epoch [{}/{}]  train_loss: {:.4f}, val_loss: {:.4f}, ' \
+                        '{:.1f}s'.format(epoch, epochs,
+                                        np.mean(training_loss), val_loss, float(use_time[-1]))
+            logger.info(message)
+
+
+        
+    message = 'YEAR : {} \n Total training time is : {:.1f}s \n Average traning time is : {:.1f}s'.format(year, total_time, sum(use_time)/len(use_time))
+    logger.info(message)		
+    result[year] = {"total_time": total_time, "average_time": sum(use_time)/len(use_time), "epoch_num": epoch+1}
+
+    logger.info('best epoch:', best_epoch)
 
     # apply the best model on the test set
-    predict_main(best_epoch, test_loader, test_target_tensor,metric_method , 'test')
+
+    params_filename = os.path.join(params_path, 'epoch_%s.params' % best_epoch)
+    print('load weight from:', params_filename)
+    net.load_state_dict(torch.load(params_filename))
+    predict_main(best_epoch, test_loader, test_target_tensor,metric_method , 'test', net, year)
 
 
-def predict_main(global_step, data_loader, data_target_tensor,metric_method , type):
+def predict_main(global_step, data_loader, data_target_tensor,metric_method , type, net, year):
     '''
 
     :param global_step: int
@@ -232,18 +315,42 @@ def predict_main(global_step, data_loader, data_target_tensor,metric_method , ty
     :return:
     '''
 
-    params_filename = os.path.join(params_path, 'epoch_%s.params' % global_step)
-    print('load weight from:', params_filename)
+    # params_filename = os.path.join(params_path, 'epoch_%s.params' % global_step)
+    # print('load weight from:', params_filename)
 
-    net.load_state_dict(torch.load(params_filename))
+    # net.load_state_dict(torch.load(params_filename))
 
-    predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type)
+    logger.info("[*] year {}, testing".format(year))
+
+    predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type, year, result)
+
+
+
+def main():
+    for year in range(begin_year, end_year + 1):
+
+        logger.info("[*] Year {} load from {}_30day.npz".format(year, osp.join(graph_signal_matrix_filename, str(year)))) 
+
+        train_main(year)
+
+    for i in [3, 6, 12]:
+        for j in ['mae', 'rmse', 'mape']:
+            info = ""
+            for year in range(begin_year, end_year+1):
+                if i in result:
+                    if j in result[i]:
+                        if year in result[i][j]:
+                            info+="{:.2f}\t".format(result[i][j][year])
+            logger.info("{}\t{}\t".format(i,j) + info)
+
+    for year in range(begin_year, end_year+1):
+        if year in result:
+            info = "year\t{}\ttotal_time\t{}\taverage_time\t{}\tepoch\t{}".format(year, result[year]["total_time"], result[year]["average_time"], result[year]['epoch_num'])
+            logger.info(info)
 
 
 if __name__ == "__main__":
-
-    train_main()
-
+    main()
     # predict_main(13, test_loader, test_target_tensor,metric_method, _mean, _std, 'test')
 
 
