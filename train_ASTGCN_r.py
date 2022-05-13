@@ -77,7 +77,7 @@ missing_value = float(training_config['missing_value'])
 
 folder_dir = '%s_h%dd%dw%d_channel%d_%e' % (model_name, num_of_hours, num_of_days, num_of_weeks, in_channels, learning_rate)
 print('folder_dir:', folder_dir)
-params_path = os.path.join('experiments', dataset_name, folder_dir)
+params_path = os.path.join('./experiments', dataset_name, folder_dir)
 print('params_path:', params_path)
 
 
@@ -115,6 +115,10 @@ logger = init_log()
 
 
 
+
+
+
+
 def train_main(year):
     global result
 
@@ -128,15 +132,15 @@ def train_main(year):
 
     # Model Definition
 
-    if (start_epoch == 0) and (not os.path.exists(params_path)):
-        os.makedirs(params_path)
-        logger.info('create params directory %s' % (params_path))
-    elif (start_epoch == 0) and (os.path.exists(params_path)):
-        shutil.rmtree(params_path)
-        os.makedirs(params_path)
-        logger.info('delete the old one and create params directory %s' % (params_path))
-    elif (start_epoch > 0) and (os.path.exists(params_path)):
-        logger.info('train from params directory %s' % (params_path))
+    if (start_epoch == 0) and (not os.path.exists(str(params_path) + '/' + str(year) + '/')):
+        os.makedirs(str(params_path) + '/' + str(year) + '/')
+        logger.info('create params directory %s' % (str(params_path) + '/' + str(year) + '/'))
+    elif (start_epoch == 0) and (os.path.exists(str(params_path) + '/' + str(year) + '/')):
+        shutil.rmtree(str(params_path) + '/' + str(year) + '/')
+        os.makedirs(str(params_path) + '/' + str(year) + '/')
+        logger.info('delete the old one and create params directory %s' % (str(params_path) + '/' + str(year) + '/'))
+    elif (start_epoch > 0) and (os.path.exists(str(params_path) + '/' + str(year) + '/')):
+        logger.info('train from params directory %s' % (str(params_path) + '/' + str(year) + '/'))
     else:
         raise SystemExit('Wrong type of model!')
 
@@ -172,7 +176,7 @@ def train_main(year):
         criterion = nn.MSELoss().to(DEVICE)
         masked_flag= 0
     optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-    sw = SummaryWriter(params_path)
+    sw = SummaryWriter('runs/' + 'log_dir')
     # print(net)
 
     print('Net\'s state_dict:')
@@ -180,7 +184,7 @@ def train_main(year):
     for param_tensor in net.state_dict():
         print(param_tensor, '\t', net.state_dict()[param_tensor].size())
         total_param += np.prod(net.state_dict()[param_tensor].size())
-    logger.info('Net\'s total params:', total_param)
+    logger.info('Net\'s total params:{}'.format(total_param))
 
     print('Optimizer\'s state_dict:')
     for var_name in optimizer.state_dict():
@@ -192,26 +196,36 @@ def train_main(year):
 
     if start_epoch > 0:
 
-        params_filename = os.path.join(params_path, str(year),'epoch_%s.params' % start_epoch)
+        params_filename = os.path.join(params_path, str(year),'epoch_%s.tar' % start_epoch)
 
         net.load_state_dict(torch.load(params_filename))
 
         logger.info('start epoch:', start_epoch)
 
-        logger.info('load weight from: ', params_filename)
+        logger.info('load weight from: {}'.format(params_filename))
 
     if year > begin_year :
         
         epo_list = []
-        params_path_prev_year = params_path + '/{}'.format(year = int(year) - 1)    # load the previous year model as the initial model
+        params_path_prev_year = params_path + '/{year}'.format(year = int(year) - 1)    # load the previous year model as the initial model
         for filename in os.listdir(params_path_prev_year): 
-            epo_list.append(filename[6:]) 					# already has .params in it
+            if filename.endswith(".tar"):
+                epo_list.append(filename[6:]) 					# already has .tar in it
         epo_list= sorted(epo_list)
         params_filename = '{}/epoch_{epo_num}'.format(params_path_prev_year, epo_num = epo_list[-1])
         assert os.path.exists(params_filename), 'Weights at {} not found'.format(params_filename)
 
-        net.load_state_dict(torch.load(params_filename))
-        logger.info('load weight from: ', params_filename)
+        checkpoint = torch.load(params_filename)
+        # print(checkpoint['model_state_dict'])
+
+        pretrained_dict = checkpoint['model_state_dict']
+        model_dict = net.state_dict()
+        pretrained_dict = { k:v for k,v in pretrained_dict.items() if k in model_dict and v.size() == model_dict[k].size() } # Keep the layer that has the same dimension 
+
+        model_dict.update(pretrained_dict)
+
+        net.load_state_dict(model_dict)
+        logger.info('load weight from: {}'.format(params_filename))
 
     # train model
 
@@ -223,7 +237,7 @@ def train_main(year):
 
     for epoch in range(start_epoch, epochs):
 
-        params_filename = os.path.join(params_path, str(year),'epoch_%s.params' % epoch)        # resume training if start_epoch != 0
+        params_filename = os.path.join(params_path, str(year),'epoch_%s.tar' % epoch)        # resume training if start_epoch != 0
 
         val_loss = 0
         training_loss = 0
@@ -273,7 +287,10 @@ def train_main(year):
             wait = 0
             best_val_loss = val_loss
             best_epoch = epoch
-            torch.save(net.state_dict(), params_filename)
+            if not os.path.exists(str(params_path) + '/' +  str(year) + '/'):
+                os.makedirs(str(params_path) + '/' +  str(year) + '/')
+            torch.save({'model_state_dict': net.state_dict()}, params_filename)
+            # save_model
             print('save parameters to file: %s' % params_filename)
         elif val_loss >= best_val_loss:
             wait += 1
@@ -293,13 +310,13 @@ def train_main(year):
     logger.info(message)		
     result[year] = {"total_time": total_time, "average_time": sum(use_time)/len(use_time), "epoch_num": epoch+1}
 
-    logger.info('best epoch:', best_epoch)
+    logger.info('best epoch: {}'.format(best_epoch))
 
     # apply the best model on the test set
 
-    params_filename = os.path.join(params_path, 'epoch_%s.params' % best_epoch)
+    params_filename = os.path.join(params_path, str(year), 'epoch_%s.tar' % best_epoch)
     print('load weight from:', params_filename)
-    net.load_state_dict(torch.load(params_filename))
+    net.load_state_dict(torch.load(params_filename)['model_state_dict'])
     predict_main(best_epoch, test_loader, test_target_tensor,metric_method , 'test', net, year)
 
 
