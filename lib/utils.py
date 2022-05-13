@@ -247,24 +247,24 @@ def load_custom_graphdata(graph_signal_matrix_filename, year, DEVICE, batch_size
     
 
     train_x = file_data['train_x']                              # (num_data, seq_len, num_node)
-    train_x = np.expand_dims(train_x, axis = -1)                # (num_data, seq_len, num_node, 1)
-    train_x = np.transpose(train_x, axes= [0, 3, 1, 2])         # (num_data, num_node, feature, seq_len)
+    train_x = np.expand_dims(train_x, axis = 3)                # (num_data, seq_len, num_node, 1)
+    train_x = np.transpose(train_x, axes= (0, 2, 3, 1))         # (num_data, num_node, feature, seq_len)
     train_target = file_data['train_y']                         # (num_data, seq_len, num_node)
-    train_target = np.transpose(train_target, axes= [0, 2, 1])  # (num_data, num_node, seq_len)
+    train_target = np.transpose(train_target, axes= (0, 2, 1))  # (num_data, num_node, seq_len)
 
 
     val_x = file_data['val_x']                                  # (num_data, seq_len, num_node)
-    val_x = np.expand_dims(val_x, axis = -1)                    # (num_data, seq_len, num_node, 1)
-    val_x = np.transpose(val_x, axes= [0, 3, 1, 2])             # (num_data, num_node, feature, seq_len)
+    val_x = np.expand_dims(val_x, axis = 3)                    # (num_data, seq_len, num_node, 1)
+    val_x = np.transpose(val_x, axes= (0, 2, 3, 1))             # (num_data, num_node, feature, seq_len)
     val_target = file_data['val_y']                             # (num_data, seq_len, num_node)
-    val_target = np.transpose(val_target, axes= [0, 2, 1])      # (num_data, num_node, seq_len)
+    val_target = np.transpose(val_target, axes= (0, 2, 1))      # (num_data, num_node, seq_len)
 
 
     test_x = file_data['test_x']                                # (num_data, seq_len, num_node)
-    test_x = np.expand_dims(test_x, axis = -1)                  # (num_data, seq_len, num_node, 1)
-    test_x = np.transpose(test_x, axes= [0, 3, 1, 2])           # (num_data, num_node, feature, seq_len)
+    test_x = np.expand_dims(test_x, axis = 3)                  # (num_data, seq_len, num_node, 1)
+    test_x = np.transpose(test_x, axes= (0, 2, 3, 1))           # (num_data, num_node, feature, seq_len)
     test_target = file_data['test_y']                           # (num_data, seq_len, num_node)
-    test_target = np.transpose(test_target, axes= [0, 2, 1])    # (num_data, num_node, seq_len)
+    test_target = np.transpose(test_target, axes= (0, 2, 1))    # (num_data, num_node, seq_len)
 
     # mean = file_data['mean'][:, :, 0:1, :]  # (1, 1, 3, 1)
     # std = file_data['std'][:, :, 0:1, :]  # (1, 1, 3, 1)
