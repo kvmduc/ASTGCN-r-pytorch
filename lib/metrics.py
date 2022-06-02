@@ -14,7 +14,7 @@ def masked_mape_np(y_true, y_pred, null_val=np.nan):
         mape = np.abs(np.divide(np.subtract(y_pred, y_true).astype('float32'),
                       y_true))
         mape = np.nan_to_num(mask * mape)
-        return np.mean(mape)
+        return np.mean(mape) * 100
 
 
 

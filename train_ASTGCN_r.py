@@ -11,7 +11,7 @@ import shutil
 import argparse
 import configparser
 from model.ASTGCN_r import make_model
-from lib.utils import load_graphdata_channel1, load_custom_graphdata, compute_val_loss_mstgcn, predict_and_save_results_mstgcn, get_logger, init_log
+from lib.utils import load_graphdata_channel1, load_custom_graphdata, compute_val_loss_mstgcn, predict_and_save_results_mstgcn, init_log
 # from tensorboardX import SummaryWriter
 from torch.utils.tensorboard import SummaryWriter
 from lib.metrics import masked_mape_np,  masked_mae,masked_mse,masked_rmse
@@ -232,11 +232,10 @@ def train_main(year):
     use_time = []
     total_time = 0
     wait = 0
-    start_time = time()
     patience = 50
 
     for epoch in range(start_epoch, epochs):
-
+        start_time = time()
         params_filename = os.path.join(params_path, str(year),'epoch_%s.tar' % epoch)        # resume training if start_epoch != 0
 
         val_loss = 0

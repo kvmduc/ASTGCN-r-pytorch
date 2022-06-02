@@ -10,6 +10,7 @@ from scipy.sparse.linalg import eigs
 from .metrics import masked_mape_np,  masked_mae,masked_mse,masked_rmse,masked_mae_test,masked_rmse_test
 import logging
 import sys
+import time
 
 
 def re_normalization(x, mean, std):
@@ -397,7 +398,7 @@ def compute_val_loss_mstgcn(net, val_loader, criterion,  masked_flag,missing_val
 #                 sw.add_scalar('MAPE_%s_points' % (i), mape, epoch)
 
 
-def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type, year, result):
+def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global_step, metric_method, params_path, type, year, result, logger):
     '''
 
     :param net: nn.Module
@@ -464,9 +465,10 @@ def predict_and_save_results_mstgcn(net, data_loader, data_target_tensor, global
             result[i]['mae'][year] = mae
             result[i]['rmse'][year] = rmse
             result[i]['mape'][year] = mape
-            print('MAE: %.2f' % (mae))
-            print('RMSE: %.2f' % (rmse))
-            print('MAPE: %.2f' % (mape))
+            logger.info("T:{:d}\tMAE\t{:.4f}\tRMSE\t{:.4f}\tMAPE\t{:.4f}".format(i,mae,rmse,mape))
+            # print('MAE: %.2f' % (mae))
+            # print('RMSE: %.2f' % (rmse))
+            # print('MAPE: %.2f' % (mape))
             excel_list.extend([mae, rmse, mape])
 
         # print overall results
@@ -505,7 +507,7 @@ def get_logger(log_dir, name, log_filename='info.log', level=logging.INFO):
 
 def init_log():
     log_dir = './log/'
-    log_filename = 'info'
+    log_filename = 'info_%s' % time.strftime('%m-%d-%H-%M-%S')
     logger = logging.getLogger(__name__)
 
     if not os.path.exists(log_dir):
